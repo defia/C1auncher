@@ -119,10 +119,25 @@ static pid_t start_launcher(const char *path, const char *ready_file, int *heart
     pid_t parent = getpid(), child;
     if (pipe(reports) != 0) return -1;
     {
-        int error = c1_shutdown_pair(channel);
-        if (error != 0) {
+        int error = 0;
+        unsigned int attempt;
+        /* Retry transient resource pressure before launching any child. Never
+         * start a permanently channel-less desktop, nor turn failure into an
+         * unbounded launcher restart loop (including with older launchers). */
+        for (attempt = 0U; attempt < 3U; ++attempt) {
+            if (supervise_stop) { error = ECANCELED; break; }
+            error = c1_shutdown_pair(channel);
+            if (error == 0) break;
             fprintf(stderr, "C1 supervisor: shutdown channel unavailable: %s\n", strerror(error));
-            channel[0] = channel[1] = -1;
+            if (attempt < 2U) {
+                struct timespec delay = {0, 100000000L};
+                (void)nanosleep(&delay, NULL);
+            }
+        }
+        if (error != 0) {
+            (void)close(reports[0]); (void)close(reports[1]);
+            errno = error;
+            return -1;
         }
     }
     if (fcntl(reports[0], F_SETFD, FD_CLOEXEC) != 0 ||

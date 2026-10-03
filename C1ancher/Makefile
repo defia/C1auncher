@@ -246,6 +246,32 @@ TSM_CFLAGS := -std=gnu99 -Os -Wall -Wextra -D_GNU_SOURCE -D_POSIX_C_SOURCE=20080
 TARGET_CFLAGS := -march=mips32r2 -mabi=32 -mhard-float -mfp32
 LDFLAGS := -static -Wl,--gc-sections,-z,noexecstack,-z,relro,-z,now
 
+# Build-only modules: embedded in C1ancher, never a fifth update component.
+IDLE_MODULE_SOURCES := src/services/terminal_idle_bash.c src/services/terminal_idle_protocol.h
+IDLE_MODULE_FLAGS := -std=c11 -Os -Wall -Wextra -Wpedantic -Werror -fPIC -shared -nostdlib -Wl,-z,noexecstack
+$(BUILD_DIR)/target/terminal-idle.so: $(IDLE_MODULE_SOURCES)
+	@mkdir -p $(dir $@)
+	$(CC) $(IDLE_MODULE_FLAGS) $(TARGET_CFLAGS) $< -o $@
+$(BUILD_DIR)/host/terminal-idle.so: $(IDLE_MODULE_SOURCES)
+	@mkdir -p $(dir $@)
+	$(HOST_CC) $(IDLE_MODULE_FLAGS) $< -o $@
+$(BUILD_DIR)/%/terminal-idle-image.h: $(BUILD_DIR)/%/terminal-idle.so scripts/embed-terminal-idle.py
+	python3 scripts/embed-terminal-idle.py $< $@
+$(BUILD_DIR)/target/src/services/terminal.o: private CPPFLAGS += -DC1_TERMINAL_IDLE_BLOB_HEADER=\"$(abspath $(BUILD_DIR)/target/terminal-idle-image.h)\"
+$(BUILD_DIR)/target/src/services/terminal.o: $(BUILD_DIR)/target/terminal-idle-image.h
+# These tests compile terminal.c directly (including the white-box fault test).
+IDLE_HOST_CONSUMERS := $(BUILD_DIR)/host/src/services/terminal.o $(HOST_TERMINAL_LIFECYCLE_TEST) \
+	$(BUILD_DIR)/host-terminal-idle-faults-tests $(BUILD_DIR)/host-automatic-shutdown-tests \
+	$(BUILD_DIR)/host-desktop-key-bridge-tests
+$(IDLE_HOST_CONSUMERS): private CPPFLAGS += -DC1_TERMINAL_IDLE_BLOB_HEADER=\"$(abspath $(BUILD_DIR)/host/terminal-idle-image.h)\"
+$(IDLE_HOST_CONSUMERS): $(BUILD_DIR)/host/terminal-idle-image.h
+# Publicly named regression target also covers direct-compile consumers.
+.PHONY: terminal-idle-bundle-test
+terminal-idle-bundle-test: $(TARGET) $(BUILD_DIR)/host/terminal-idle-image.h
+	python3 tests/test_terminal_idle_bundle.py --build-dir $(abspath $(BUILD_DIR))
+
+.DEFAULT_GOAL := all
+
 .PHONY: all clean verify host-test host-update-tests
 
 all: $(TARGET) $(LAUNCHER_TARGET) $(PKG_TARGET) $(UPDATER_TARGET) verify $(BUILD_DIR)/c1pkg-font-LICENSE.txt $(BUILD_DIR)/c1pkg-font-README.md
@@ -588,11 +614,19 @@ $(BUILD_DIR)/host-power-runtime-tests: tests/test_power_runtime.c src/hal/linux/
 $(BUILD_DIR)/host-shutdown-runtime-tests: tests/test_shutdown_runtime.c src/hal/linux/ui_runtime.c src/core/power_policy.c src/core/record.c src/core/status.c src/platform/stop.c src/ui/model.c src/ui/preferences.c src/ui/input_method.c $(IME_DIR)/c1_ime_client.c $(PROJECT_HEADERS) | $(BUILD_DIR)
 	$(HOST_CC) $(CPPFLAGS) $(COMMON_CFLAGS) tests/test_shutdown_runtime.c src/core/power_policy.c src/core/record.c src/core/status.c src/platform/stop.c src/ui/model.c src/ui/preferences.c src/ui/input_method.c $(IME_DIR)/c1_ime_client.c -Wl,--gc-sections -o $@
 
-power-key-test: $(BUILD_DIR)/host-power-key-tests $(BUILD_DIR)/host-poweroff-tests $(BUILD_DIR)/host-power-runtime-tests $(BUILD_DIR)/host-shutdown-runtime-tests
+$(BUILD_DIR)/host-automatic-shutdown-tests: tests/test_automatic_shutdown.c src/hal/linux/ui_runtime.c src/core/power_policy.c src/core/record.c src/services/terminal.c src/platform/liveness.c $(PROJECT_HEADERS) | $(BUILD_DIR)
+	$(HOST_CC) $(CPPFLAGS) $(COMMON_CFLAGS) tests/test_automatic_shutdown.c src/core/power_policy.c src/core/record.c src/services/terminal.c src/platform/liveness.c -Wl,--gc-sections -o $@
+
+$(BUILD_DIR)/host-terminal-idle-faults-tests: tests/test_terminal_idle_faults.c tests/test_terminal_lifecycle.c src/services/terminal.c src/platform/liveness.c src/platform/app_lease.c $(PROJECT_HEADERS) | $(BUILD_DIR)
+	$(HOST_CC) $(CPPFLAGS) $(COMMON_CFLAGS) tests/test_terminal_idle_faults.c src/platform/liveness.c src/platform/app_lease.c -o $@
+
+power-key-test: $(BUILD_DIR)/host-power-key-tests $(BUILD_DIR)/host-poweroff-tests $(BUILD_DIR)/host-power-runtime-tests $(BUILD_DIR)/host-shutdown-runtime-tests $(BUILD_DIR)/host-automatic-shutdown-tests $(BUILD_DIR)/host-terminal-idle-faults-tests
 	$(BUILD_DIR)/host-power-key-tests
 	$(BUILD_DIR)/host-poweroff-tests
 	$(BUILD_DIR)/host-power-runtime-tests
 	$(BUILD_DIR)/host-shutdown-runtime-tests
+	$(BUILD_DIR)/host-automatic-shutdown-tests
+	$(BUILD_DIR)/host-terminal-idle-faults-tests
 
 host-test: power-key-test
 

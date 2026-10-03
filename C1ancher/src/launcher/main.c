@@ -329,9 +329,17 @@ int main(int argc, char **argv)
     install_signal_handlers();
     if (c1_descendants_adopt() != 0) return C1_LAUNCHER_CRASH_STORM_EXIT;
     {
+        bool advertised = getenv(C1_SHUTDOWN_FD_ENV) != NULL;
         int error = c1_shutdown_client_init(&shutdown_upstream);
-        if (error != 0 && error != ENOTCONN)
+        if (error != 0) {
             fprintf(stderr, "C1 launcher: shutdown channel unavailable: %s\n", strerror(error));
+            /* An advertised but unusable capability must not become a healthy
+             * desktop that can never shut down. Exit before starting the UI;
+             * the supervisor applies its existing bounded crash/rollback policy.
+             * Missing capabilities belong to legacy supervisors: restarting
+             * cannot create one there, so retain fail-closed compatibility. */
+            if (advertised) return 125;
+        }
     }
     {
         const char *value = getenv(C1_SUPERVISOR_HEARTBEAT_FD_ENV);

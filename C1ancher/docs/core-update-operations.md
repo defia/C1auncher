@@ -30,8 +30,8 @@ Do not enroll a production device or publish a production channel until all gate
 1. The intended source tree is committed and `build-core-release.ps1` succeeds without `-AllowDirtySource`.
 2. The production private key is stored and backed up outside the repositories.
 3. The fixed server and device public keys have been compared byte-for-byte with the key derived from the production private key.
-4. `setup-core-repo.sh` has passed in an isolated root environment with the production Caddy version.
-5. HTTP GET/HEAD succeeds and write methods return 403 for both repositories.
+4. The root-owned core activation helper and maintenance migration have passed their isolated Linux/root tests; the existing Caddy proxy configuration is unchanged or separately validated.
+5. HTTP GET/HEAD/Range succeeds for stable and the legacy canary URL, with byte-identical signed core responses. Write methods are rejected (403 at a rejecting proxy or 405 with `Allow: GET, HEAD` at the Go service).
 6. The representative device has a fresh `/etc/app_daemon`, `/usr/data`, and `/storage` backup.
 7. The fault matrix below has passed on an enrolled development device.
 
@@ -52,34 +52,92 @@ The release must contain exactly:
 
 Validate with `scripts/validate-core-release.sh` using the fixed PEM public key. Record sequence, version, source revision, source date epoch, manifest SHA-256, and release ID in the change record. Do not record credentials or private-key paths.
 
-## Install the server repository
+## Server architecture and single-channel maintenance
 
-Run `C1ancher-server/scripts/setup-core-repo.sh` as root with the fixed PEM public key, public server name, listen port, and a dedicated publisher account.
+**Deployed and independently verified on 2026-09-26.**
+The Go service and root publication helper now use one authoritative stable
+channel; `channels/canary -> stable` is a permanent compatibility alias.
+Immediately after this migration, both URLs served the existing signed
+sequence 28 / version 2.9.10 byte-for-byte. This deployment did not publish a
+new core version. Loopback and public-IP GET/HEAD/Range, write rejection,
+application read endpoints and the running binary hash were verified.
+An independent client also verified the Ed25519 signatures and all six core
+files from both public URLs. Trust roots, validators, Caddy/configuration,
+immutable releases and the application catalog were unchanged.
 
-The script creates:
+The production Caddy routes `/c1/core/v1/*` to the Go `c1repo` service on
+`127.0.0.1:8091`; core files are not served by a separate Caddy file-server rule.
+The service reads `/srv/c1core` and has no core signing key. It strictly accepts
+only the manifest, detached signature and four component paths, with existing
+GET/HEAD, Range, download queue, bandwidth and path-containment controls.
 
-- root-controlled immutable releases and channels under `/srv/c1core`
-- publisher-writable staging only
-- root-controlled disabled-release markers
-- root-owned validator and activation helper under `/usr/local/libexec/c1core`
-- a narrowly scoped sudo rule for the activation helper
-- GET/HEAD-only Caddy routes for `/c1/core/v1/{canary,stable}`
+当前单通道状态：
 
-After setup, verify ownership and modes. The publisher must not be able to write `releases`, `channels`, `disabled`, `trust`, or the activation helpers.
+- `channels/stable` is the sole authoritative release pointer.
+- `channels/canary` is a fixed relative symlink to `stable`, never a second
+  release pointer. It remains a dangling alias while stable is paused.
+- The Go service also maps every accepted `canary/` request to `stable/` before
+  opening a file. There is no redirect, cached duplicate or retired-version
+  fallback, even if an old canary path remains on disk.
+- An atomic change to stable therefore affects both URL spellings on every
+  future publication. Separate requests can still straddle a publication;
+  device signature/hash checks continue to reject mixed release contents.
+- Caddy routing, both core trust-key representations, the installed release
+  validator and `c1verify` signature verifier remain unchanged.
 
-## Publish, promote, pause, and disable
+Repository releases, channels, disabled markers and trust remain root-controlled;
+only staging may be publisher-writable. Install the reviewed helper from the
+local-only `C1ancher-server/scripts/activate-core-release.sh` at
+`/usr/local/libexec/c1core/activate-core-release`, root-owned mode 0755. The helper
+requires the migration alias, fixed trust paths, root-owned non-writable trust
+boundaries, and the existing `.publish.lock` for every operation. It fails closed
+on an unmigrated independent canary pointer.
 
-Publish a locally validated release with `C1ancher-server/scripts/publish-core-release.ps1`. A successful publication moves `canary` atomically and leaves `stable` unchanged.
+The private deployment/rollback runbook is
+`C1ancher-server/docs/stable-channel-maintenance.md`. It describes a pinned SSH
+read-only inspection, local Linux binary build, explicit approved baseline,
+exclusive staging, lock-protected activation and safe binary rollback. Server
+source and publisher tooling remain local-only; deploy only the required server
+binary and root activation helper, never a public source attachment.
 
-Promote only the active canary with `promote-core-release.ps1`.
+## Publish, compatibility promote, pause, and disable
 
-Emergency controls use `manage-core-channel.ps1`:
+Prepare exactly the six signed release files in the canonical staging path
+`/srv/c1core/staging/<release-id>-<32-lowercase-hex>.upload`. Invoke the installed
+helper with the legacy syntax `publish <stage> <release-id>`. Publication now
+atomically activates **stable directly**, which also serves all legacy canary
+URLs. It never writes an independent canary version. No new signing or rebuilding
+is involved in the channel migration itself.
 
-- `-PauseChannel canary` removes the canary pointer atomically.
-- `-PauseChannel stable` removes the stable pointer atomically.
-- `-DisableReleaseId <release-id>` writes an immutable disabled marker and withdraws any matching canary/stable pointers under the publication lock.
+Existing command forms are handled as follows:
 
-A disabled release cannot be published or promoted again. Releases remain on disk for audit and recovery; disabling changes channel availability, not historical bytes.
+- `promote <release-id> stable` succeeds without changing anything only when
+  that exact, verified, enabled release is already active on stable. A retired
+  canary, different release, paused channel or other destination is rejected.
+- `pause stable` removes only the stable pointer. Both URL spellings become
+  unavailable; the `canary -> stable` alias is retained.
+- `pause canary` is a compatibility spelling of `pause stable` and explicitly
+  warns that it pauses both URLs. It cannot secretly leave stable serving.
+- `disable <release-id>` durably creates the immutable disabled marker and
+  withdraws stable if it selects that release. Both URL spellings are then
+  unavailable. Disabling an unrelated historical release leaves stable intact.
+
+The helper preserves full signature, artifact hash/size/ABI checks, protected
+intake copying, immutable byte comparison on retries, file/directory sync,
+atomic rename and the exclusive publication lock. Sequence and security-epoch
+floors are checked against **all retained verified releases**, including when a
+channel is paused or disabled; same-sequence identity conflicts and disabled
+sequences are rejected before importing a conflicting release. Keep this
+history: deleting high-water releases would remove this additional server-side
+floor and requires a separate retention design. Device-side anti-rollback is
+unchanged.
+
+Resume a paused channel through a validated `publish` of the latest eligible
+signed release, not through `promote`. Disabled releases cannot be resumed.
+Retire historical one-off scripts that derive and execute a modified copy of the
+old helper: the installed single-channel helper is the only supported publication
+entry point. Such old derivation scripts should fail their source checks, not be
+adapted to recreate an independent canary.
 
 ## Enroll devices
 
@@ -154,20 +212,19 @@ Run these destructive tests only on a backed-up development device with physical
 
 For every device test, capture only release ID, manifest digest, phase, monotonic timestamps, process counts, pointer targets, mount state, hashes, and result codes. Do not capture URLs containing parameters, keys, passwords, or the server address file.
 
-## Canary rollout
+## Stable-only rollout
 
-1. Enroll one development device and reboot twice.
-2. Publish the signed release to canary.
-3. Confirm update success, health-confirmation time, boot count, rollback count, and updater-slot status.
-4. Expand to a small physically recoverable batch.
-5. Pause canary immediately if confirmation latency or rollback rate exceeds the release threshold.
-6. Promote the exact active canary bytes to stable; do not rebuild or resign.
-7. Expand stable in explicit batches with an observation window after each batch.
-8. Disable the release and pause affected channels on evidence of a security or boot-safety defect.
+1. Validate the signed release offline and on a physically recoverable development device; reboot twice and confirm health before public activation.
+2. Use explicit device enrollment/update batches for observation. The old canary URL is a stable alias, not a hidden test cohort.
+3. Publish the approved signed release directly to stable through the installed helper.
+4. Confirm the stable and canary URLs return the exact same manifest, signature and all four artifacts; check health-confirmation time, boot count, rollback count and updater-slot status.
+5. Pause stable immediately if confirmation latency or rollback rate exceeds the release threshold. The old `pause canary` spelling has the same global effect.
+6. Resume only with an eligible validated publication after investigation; never rebuild or resign merely to move a channel.
+7. Disable a release on evidence of a security or boot-safety defect. Retain its immutable bytes and marker for audit and anti-rollback checks.
 
 ## Disaster recovery
 
-1. Stop automatic rollout by pausing canary and stable.
+1. Stop automatic rollout by pausing stable; this also stops every legacy canary URL.
 2. Preserve device state, core generation directories, state generations, enrollment log, and hashes before changing anything.
 3. If the candidate is pending, run the known-good updater `rollback` command with the fixed state/core/key paths.
 4. If the active updater is fatal, select the other verified slot in `/usr/data/c1/update/updater-slot` using a same-directory temporary file and rename.

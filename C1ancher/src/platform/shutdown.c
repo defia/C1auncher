@@ -57,15 +57,32 @@ int c1_shutdown_export(int fd)
     return setenv(C1_SHUTDOWN_FD_ENV, text, 1) == 0 ? 0 : errno;
 }
 
+static int validate_client_fd(int fd)
+{
+    struct ucred peer;
+    struct sockaddr_storage address;
+    socklen_t size = sizeof(int);
+    int type;
+    if (getsockopt(fd, SOL_SOCKET, SO_TYPE, &type, &size) != 0) return errno;
+    if (type != SOCK_SEQPACKET) return EPROTOTYPE;
+    size = sizeof(address);
+    if (getsockname(fd, (struct sockaddr *)&address, &size) != 0) return errno;
+    if (address.ss_family != AF_UNIX) return EPROTOTYPE;
+    size = sizeof(peer);
+    if (getsockopt(fd, SOL_SOCKET, SO_PEERCRED, &peer, &size) != 0) return errno;
+    if (peer.pid != getppid() || peer.uid != geteuid()) return EACCES;
+    if (fcntl(fd, F_SETFD, FD_CLOEXEC) != 0 ||
+        fcntl(fd, F_SETFL, O_NONBLOCK) != 0) return errno;
+    return 0;
+}
+
 int c1_shutdown_client_init(struct c1_shutdown_client *client)
 {
     const char *text = getenv(C1_SHUTDOWN_FD_ENV);
-    struct ucred peer;
-    struct sockaddr_storage address;
-    socklen_t size;
     char *end;
     long fd;
-    int type;
+    int error;
+    unsigned int attempt;
     if (client == NULL) return EINVAL;
     client->fd = -1;
     client->owner = getpid();
@@ -78,17 +95,14 @@ int c1_shutdown_client_init(struct c1_shutdown_client *client)
         return EINVAL;
     }
     (void)unsetenv(C1_SHUTDOWN_FD_ENV);
-    size = sizeof(type);
-    if (getsockopt((int)fd, SOL_SOCKET, SO_TYPE, &type, &size) != 0 || type != SOCK_SEQPACKET)
-        return EPROTOTYPE;
-    size = sizeof(address);
-    if (getsockname((int)fd, (struct sockaddr *)&address, &size) != 0 ||
-        address.ss_family != AF_UNIX) return EPROTOTYPE;
-    size = sizeof(peer);
-    if (getsockopt((int)fd, SOL_SOCKET, SO_PEERCRED, &peer, &size) != 0 ||
-        peer.pid != getppid() || peer.uid != geteuid()) return EACCES;
-    if (fcntl((int)fd, F_SETFD, FD_CLOEXEC) != 0 ||
-        fcntl((int)fd, F_SETFL, O_NONBLOCK) != 0) return errno;
+    /* The capability is consumed once, but an interrupted validation must not
+     * permanently discard a usable inherited endpoint. Retry only EINTR, with
+     * a fixed bound; invalid or unauthenticated descriptors are never accepted. */
+    for (attempt = 0U; attempt < 3U; ++attempt) {
+        error = validate_client_fd((int)fd);
+        if (error != EINTR) break;
+    }
+    if (error != 0) return error;
     client->fd = (int)fd;
     return 0;
 }
@@ -213,8 +227,14 @@ void c1_shutdown_server_poll(struct c1_shutdown_server *server, pid_t child,
 
 int c1_shutdown_init(void)
 {
-    if (ui_client.fd >= 0 && ui_client.owner == getpid()) close(ui_client.fd);
+    /* Re-entering the UI in the same process must preserve the sole endpoint,
+     * request serial and any active renewal. Its environment was consumed by
+     * the first successful initialization and cannot recreate the capability. */
+    if (ui_client.fd >= 0 && ui_client.owner == getpid()) return 0;
+    /* A forked worker cannot acquire its parent's authenticated capability. */
+    if (ui_client.fd >= 0) close(ui_client.fd);
     ui_active = false;
+    ui_renew_at = 0;
     return c1_shutdown_client_init(&ui_client);
 }
 

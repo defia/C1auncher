@@ -1,0 +1,22 @@
+#ifndef C1_SERVICES_TERMINAL_IDLE_PROTOCOL_H
+#define C1_SERVICES_TERMINAL_IDLE_PROTOCOL_H
+
+#include <stdint.h>
+
+#define C1_TERMINAL_IDLE_FD_ENV "C1_TERMINAL_IDLE_FD"
+#define C1_TERMINAL_IDLE_IMAGE_FD_ENV "C1_TERMINAL_IDLE_IMAGE_FD"
+#define C1_TERMINAL_IDLE_HELPER_ENV "C1_TERMINAL_IDLE_HELPER"
+#define C1_TERMINAL_IDLE_MAGIC UINT32_C(0x43314944)
+#define C1_TERMINAL_IDLE_QUERY 1U
+#define C1_TERMINAL_IDLE_PROOF 2U
+#define C1_TERMINAL_IDLE_BUSY 3U
+#define C1_TERMINAL_IDLE_RELEASE 4U
+
+typedef struct {
+    uint32_t magic;
+    uint32_t kind;
+    uint64_t token;
+    int64_t deadline_ms;
+} c1_terminal_idle_message;
+
+#endif

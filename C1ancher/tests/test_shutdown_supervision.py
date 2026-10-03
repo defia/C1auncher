@@ -44,6 +44,16 @@ while True:
         elif command == 'cancel':
             (root / 'cancel-result').write_text(str(lib.c1_shutdown_cancel()))
             active = False
+        elif command == 'reinit':
+            initialized = lib.c1_shutdown_init()
+            (root / 'reinit-result').write_text(str(initialized))
+        elif command == 'reinit-fork-spoof':
+            child = os.fork()
+            if child == 0:
+                result = lib.c1_shutdown_init()
+                (root / 'spoof-result').write_text(str(result or lib.c1_shutdown_begin()))
+                os._exit(0)
+            os.waitpid(child, 0)
         elif command == 'fork-spoof':
             child = os.fork()
             if child == 0:
@@ -81,10 +91,13 @@ class ShutdownSupervisionTests(unittest.TestCase):
                            ['-o', str(cls.output / name)], check=True)
         compile_to('C1ancher-launcher', ['src/launcher/main.c', 'src/launcher/cleanup.c',
                    'src/update/state.c', 'src/security/secure_file.c', 'src/launcher/policy.c',
-                   'src/platform/liveness.c', 'src/platform/shutdown.c'])
+                   'src/platform/liveness.c', 'src/platform/shutdown.c',
+                   'tests/shutdown_faults_host.c'], ['-Wl,--wrap=getsockopt'])
         compile_to('supervisor', ['tests/shutdown_supervise_host.c', 'src/update/supervise.c',
                    'src/update/supervise_policy.c', 'src/launcher/policy.c',
-                   'src/security/secure_file.c', 'src/platform/shutdown.c'])
+                   'src/security/secure_file.c', 'src/platform/shutdown.c',
+                   'tests/shutdown_faults_host.c'],
+                   ['-DC1_TEST_PAIR_FAULT', '-Wl,--wrap=socketpair'])
         compile_to('shutdown.so', ['src/platform/shutdown.c'], ['-fPIC', '-shared'])
 
     @classmethod
@@ -127,10 +140,15 @@ class ShutdownSupervisionTests(unittest.TestCase):
     def command(self, value):
         (self.root / 'command').write_text(value)
 
-    def start(self, pending=True, legacy=False):
+    def start(self, pending=True, legacy=False, pair_failure=None, init_failure=None,
+              wait_ready=True):
         env = dict(os.environ, FIXTURE_ROOT=str(self.root),
                    FIXTURE_SHUTDOWN_LIB=str(self.output / 'shutdown.so'),
                    C1_HEARTBEAT_STARTUP_MS='1800', C1_HEARTBEAT_TIMEOUT_MS='1600')
+        if pair_failure:
+            env['FIXTURE_PAIR_FAILURE'] = pair_failure
+        if init_failure:
+            env['FIXTURE_INIT_FAILURE'] = init_failure
         if legacy:
             # Old launcher keeps its heartbeat format and ignores new socket.
             (self.artifacts / 'C1ancher-launcher').write_text(
@@ -143,15 +161,144 @@ class ShutdownSupervisionTests(unittest.TestCase):
                                         str(self.root / 'ready'), str(self.root / 'events'),
                                         'pending' if pending else 'confirmed'],
                                        env=env, start_new_session=True)
+        if not wait_ready:
+            return
         self.wait_for(lambda: bool(self.read('ready')) if not legacy else (self.root / 'ready').exists())
         if not legacy:
             self.wait_for(lambda: len(self.read('starts').split()) >= 2)
             self.ui, self.launcher = map(int, self.read('starts').splitlines()[0].split())
 
     def begin(self):
+        (self.root / 'begin-result').unlink(missing_ok=True)
         self.command('begin')
         self.wait_for(lambda: bool(self.read('begin-result')))
         self.assertEqual(self.read('begin-result'), '0')
+
+    def test_begin_cancel_begin_again(self):
+        self.start(pending=False)
+        self.begin()
+        self.command('cancel')
+        self.wait_for(lambda: bool(self.read('cancel-result')))
+        self.assertEqual(self.read('cancel-result'), '0')
+        self.begin()
+        os.kill(self.launcher, signal.SIGKILL)
+        self.assertEqual(self.process.wait(timeout=4), 0)
+        self.assertEqual(len(self.read('starts').splitlines()), 1)
+        self.assertEqual(self.read('events'), '')
+
+    def test_repeated_ui_init_keeps_authenticated_channel(self):
+        self.start(pending=False)
+        self.command('reinit')
+        self.wait_for(lambda: bool(self.read('reinit-result')))
+        self.assertEqual(self.read('reinit-result'), '0')
+        self.begin()
+        os.kill(self.launcher, signal.SIGKILL)
+        self.assertEqual(self.process.wait(timeout=4), 0)
+
+    def test_reinitialized_fork_cannot_request_shutdown(self):
+        self.start(pending=True)
+        self.command('reinit-fork-spoof')
+        self.wait_for(lambda: bool(self.read('spoof-result')))
+        self.assertNotEqual(self.read('spoof-result'), '0')
+        self.begin()  # Closing a fork's descriptor cannot close the UI endpoint.
+        os.kill(self.launcher, signal.SIGKILL)
+        self.assertEqual(self.process.wait(timeout=4), 0)
+
+    def test_new_ui_after_ui_crash_can_begin(self):
+        self.start(pending=False)
+        os.kill(self.ui, signal.SIGKILL)
+        self.wait_for(lambda: len(self.read('starts').splitlines()) >= 2)
+        new_ui, new_launcher = map(int, self.read('starts').splitlines()[-1].split())
+        self.assertNotEqual(new_ui, self.ui)
+        self.assertEqual(new_launcher, self.launcher)
+        self.begin()
+        os.kill(new_ui, signal.SIGKILL)
+        self.assertEqual(self.process.wait(timeout=4), 0)
+        self.assertEqual(len(self.read('starts').splitlines()), 2)
+        self.assertEqual(self.read('events'), '')
+
+    def test_new_ui_after_launcher_crash_can_begin(self):
+        self.start(pending=False)
+        os.kill(self.launcher, signal.SIGKILL)
+        self.wait_for(lambda: len(self.read('starts').splitlines()) >= 2)
+        new_ui, new_launcher = map(int, self.read('starts').splitlines()[-1].split())
+        self.assertNotEqual(new_ui, self.ui)
+        self.assertNotEqual(new_launcher, self.launcher)
+        self.begin()
+        os.kill(new_launcher, signal.SIGKILL)
+        self.assertEqual(self.process.wait(timeout=4), 0)
+        self.assertEqual(len(self.read('starts').splitlines()), 2)
+        self.assertEqual(self.read('events'), '')
+
+    def test_transient_supervisor_channel_failure_recovers_before_ui(self):
+        self.start(pending=False, pair_failure='once')
+        self.assertEqual(len(self.read('pair-attempts').splitlines()), 2)
+        self.assertEqual(len(self.read('starts').splitlines()), 1)
+        self.begin()
+        os.kill(self.launcher, signal.SIGKILL)
+        self.assertEqual(self.process.wait(timeout=4), 0)
+
+    def test_persistent_supervisor_channel_failure_is_bounded(self):
+        self.start(pending=False, pair_failure='always', wait_ready=False)
+        self.assertEqual(self.process.wait(timeout=4), 71)
+        self.assertEqual(len(self.read('pair-attempts').splitlines()), 3)
+        self.assertEqual(self.read('starts'), '')
+        self.assertEqual(self.read('events'), '')
+
+    def test_transient_launcher_init_failure_restarts_with_fresh_channel(self):
+        self.start(pending=False, init_failure='once')
+        self.assertEqual(len(self.read('init-attempts').splitlines()), 2)
+        self.assertEqual(len(self.read('starts').splitlines()), 1)
+        self.begin()
+        os.kill(self.launcher, signal.SIGKILL)
+        self.assertEqual(self.process.wait(timeout=4), 0)
+        self.assertEqual(self.read('events'), '')
+
+    def test_interrupted_launcher_init_retries_same_capability(self):
+        self.start(pending=True, init_failure='eintr-once')
+        self.assertEqual(len(self.read('init-attempts').splitlines()), 2)
+        self.begin()
+        os.kill(self.launcher, signal.SIGKILL)
+        self.assertEqual(self.process.wait(timeout=4), 0)
+        self.assertEqual(self.read('events'), '')
+
+    def test_persistent_launcher_init_failure_has_bounded_restarts(self):
+        self.start(pending=False, init_failure='always', wait_ready=False)
+        self.assertEqual(self.process.wait(timeout=22), 71)
+        self.assertEqual(len(self.read('init-attempts').splitlines()), 5)
+        self.assertEqual(self.read('starts'), '')
+        self.assertEqual(self.read('events'), 'rollback\n')
+
+    def test_persistent_interruption_rolls_back_pending_without_ui(self):
+        self.start(pending=True, init_failure='eintr-always', wait_ready=False)
+        self.assertEqual(self.process.wait(timeout=4), 71)
+        self.assertEqual(len(self.read('init-attempts').splitlines()), 3)
+        self.assertEqual(self.read('starts'), '')
+        self.assertEqual(self.read('events'), 'rollback\n')
+
+    def test_legacy_supervisor_without_capability_keeps_desktop_fail_closed(self):
+        # This test process acts as an old supervisor: inherited health pipe,
+        # no shutdown socket. A launcher restart cannot add the absent protocol.
+        health_read, health_write = os.pipe()
+        try:
+            env = dict(os.environ, FIXTURE_ROOT=str(self.root),
+                       FIXTURE_SHUTDOWN_LIB=str(self.output / 'shutdown.so'),
+                       C1_SUPERVISOR_HEARTBEAT_FD=str(health_write),
+                       C1_HEARTBEAT_STARTUP_MS='1800', C1_HEARTBEAT_TIMEOUT_MS='1600')
+            env.pop('C1_SHUTDOWN_FD', None)
+            self.process = subprocess.Popen([str(self.artifacts / 'C1ancher-launcher')],
+                                           env=env, pass_fds=(health_write,),
+                                           start_new_session=True)
+            self.wait_for(lambda: bool(self.read('ready')))
+            self.command('begin')
+            self.wait_for(lambda: bool(self.read('begin-result')))
+            self.assertNotEqual(self.read('begin-result'), '0')
+            time.sleep(2)
+            self.assertIsNone(self.process.poll())
+            self.assertEqual(len(self.read('starts').splitlines()), 1)
+        finally:
+            os.close(health_read)
+            os.close(health_write)
 
     def test_pending_shutdown_kill_launcher_never_restarts_or_rolls_back(self):
         self.start(pending=True)
@@ -279,6 +426,41 @@ assert lib.c1_shutdown_init() != 0  # Created by self, not inherited from parent
         subprocess.run(['/usr/bin/python3', '-c', probe],
                        env=dict(os.environ, FIXTURE_SHUTDOWN_LIB=str(self.output / 'shutdown.so')),
                        check=True, timeout=4)
+
+    def test_reinit_preserves_serial_and_active_renewal(self):
+        probe = r'''
+import ctypes, os, time
+lib = ctypes.CDLL(os.environ['FIXTURE_SHUTDOWN_LIB'])
+assert lib.c1_shutdown_init() == 0
+assert lib.c1_shutdown_begin() == 0
+assert lib.c1_shutdown_init() == 0
+assert lib.c1_shutdown_cancel() == 0
+assert lib.c1_shutdown_begin() == 0
+assert lib.c1_shutdown_init() == 0
+time.sleep(5.1)
+assert lib.c1_shutdown_keepalive() == 0
+assert lib.c1_shutdown_cancel() == 0
+'''
+        a, b = socket.socketpair(socket.AF_UNIX, socket.SOCK_SEQPACKET)
+        try:
+            env = dict(os.environ, FIXTURE_SHUTDOWN_LIB=str(self.output / 'shutdown.so'),
+                       C1_SHUTDOWN_FD=str(b.fileno()))
+            client = subprocess.Popen(['/usr/bin/python3', '-c', probe], env=env,
+                                      pass_fds=(b.fileno(),))
+            b.close()
+            try:
+                a.settimeout(7)
+                for serial, operation in enumerate((1, 2, 1, 1, 2), start=1):
+                    packet = list(struct.unpack('=IIIII', a.recv(128)))
+                    self.assertEqual(packet, [0x43315344, 1, operation, serial, 0])
+                    packet[2] |= 0x100
+                    a.send(struct.pack('=IIIII', *packet))
+                self.assertEqual(client.wait(timeout=3), 0)
+            finally:
+                if client.poll() is None:
+                    client.kill(); client.wait(timeout=3)
+        finally:
+            a.close(); b.close()
 
     def test_unknown_protocol_missing_ack_and_stale_ack_are_rejected(self):
         probe = r'''

@@ -751,25 +751,71 @@ static c1_status wait_for_poweroff(void)
     return C1_STATUS_SHUTDOWN_REQUESTED;
 }
 
-static bool automatic_suspend_safe(const c1_service_worker *worker)
+static const char *automatic_power_blocker(const c1_service_worker *worker)
 {
     struct c1_update_state update;
     char error[C1_UPDATE_ERROR_MAX] = "";
-    if (worker->pid > 0 || desktop_job.pid > 0 || network_clock.pid > 0 ||
-        c1_app_run_active() || c1_app_lease_active()) return false;
+    if (worker->pid > 0) return "service-task";
+    if (desktop_job.pid > 0) return "desktop-task";
+    if (network_clock.pid > 0) return "time-sync";
+    if (c1_app_run_active()) return "application-run";
+    if (c1_app_lease_active()) return "display-lease";
     if (c1_update_state_load(C1_UPDATE_DEFAULT_STATE_ROOT, &update, error, sizeof(error)) != 0)
-        return false; /* Unknown update state is not permission for a power action. */
-    return update.phase == C1_UPDATE_IDLE || update.phase == C1_UPDATE_CONFIRMED ||
-           update.phase == C1_UPDATE_PREPARED;
+        return "update-state-unknown";
+    if (update.phase != C1_UPDATE_IDLE && update.phase != C1_UPDATE_CONFIRMED &&
+        update.phase != C1_UPDATE_PREPARED) return "update-in-progress";
+    return NULL;
+}
+
+static bool automatic_suspend_safe(const c1_service_worker *worker)
+{
+    return automatic_power_blocker(worker) == NULL;
 }
 
 static bool automatic_shutdown_safe(const c1_service_worker *worker,
-                                     const c1_terminal_session *user,
+                                     c1_terminal_session *user,
                                      const c1_terminal_session *app)
 {
-    /* Suspend can restore the current terminal; shutdown cannot preserve it.
-     * Never stop user applications just to make the idle deadline achievable. */
-    return user->child_pid <= 0 && app->child_pid <= 0 && automatic_suspend_safe(worker);
+    (void)worker;
+    (void)app;
+    /* Only a foreground command in the desktop-owned terminal delays
+     * shutdown. All other work is intentionally outside this gate. */
+    return !c1_terminal_command_running(user);
+}
+
+static bool prepare_automatic_shutdown(const c1_service_worker *worker,
+                                        c1_terminal_session *user,
+                                        c1_terminal_session *app,
+                                        c1_record_sink sink)
+{
+    const char *reason = c1_terminal_command_running(user) ? "terminal-command-running" : NULL;
+    c1_record record;
+    (void)worker;
+    (void)app;
+    if (reason == NULL && user->child_pid > 0) {
+        /* No foreground command owns the terminal. This deliberately closes
+         * the shell even with typed input or background descendants; the
+         * session supervisor cleans up the complete owned process tree. */
+        c1_terminal_stop(user);
+    }
+    if (reason == NULL && automatic_shutdown_safe(worker, user, app)) return true;
+    if (reason == NULL) reason = "state-changed";
+    c1_record_init(&record, "power", "shutdown-deferred");
+    (void)c1_record_add_text(&record, "reason", reason);
+    (void)c1_record_add_integer(&record, "retry_ms", C1_POWER_RETRY_DELAY_MS);
+    (void)c1_record_emit(sink, &record);
+    fprintf(stderr, "C1ancher: automatic shutdown deferred: %s\n", reason);
+    return false;
+}
+
+/* Keep queued keys and terminal replies untouched until a dispatched idle
+ * check has replied and, if accepted, its process has been reaped. A slow
+ * supervisor is not an input error and must not restart the whole desktop. */
+static bool idle_close_settled(c1_terminal_session *session)
+{
+    if (!session->idle_close_pending) return true;
+    (void)c1_terminal_close_idle(session);
+    return !session->idle_close_pending;
 }
 
 static const char *terminal_action_command(c1_ui_action action)
@@ -1108,15 +1154,16 @@ static c1_status open_inputs(struct pollfd *inputs)
 static c1_status flush_terminal_replies(c1_terminal_session *session,
                                         c1_terminal_screen *screen)
 {
-    char reply[256];
-    size_t count;
-
-    while ((count = c1_terminal_screen_take_reply(screen, reply, sizeof(reply))) > 0U) {
-        c1_status status = c1_terminal_write(session, reply, count);
-
-        if (status != C1_STATUS_OK) {
-            return status;
-        }
+    /* Preserve the no-screen no-op behavior of take_reply(). */
+    while (screen != NULL && screen->reply_length > 0U) {
+        size_t count = screen->reply_length < 256U ? screen->reply_length : 256U;
+        c1_status status = c1_terminal_write(session, screen->reply + screen->reply_offset, count);
+        /* A temporary refusal accepts no bytes. Retain the reply for retry,
+         * instead of removing it from the screen queue before the write. */
+        if (status != C1_STATUS_OK) return status;
+        screen->reply_offset += count;
+        screen->reply_length -= count;
+        if (screen->reply_length == 0U) screen->reply_offset = 0U;
     }
     return C1_STATUS_OK;
 }
@@ -1658,6 +1705,17 @@ c1_status c1_linux_ui_run(c1_record_sink sink)
             break;
         }
         c1_liveness_beat(now);
+        if (!idle_close_settled(&user_session)) {
+            /* The bounded session-side check owns the in-flight decision.
+             * Leave evdev and PTY bytes queued rather than converting a
+             * temporary C1_STATUS_UNAVAILABLE into a fatal input error. */
+            if (c1_stop_requested()) {
+                status = C1_STATUS_INTERRUPTED;
+                break;
+            }
+            (void)poll(NULL, 0U, 10);
+            continue;
+        }
         if (now >= next_battery_at) {
             /* Independent of input/redraws and display leases; never redraw a
              * frozen lock screen just to collect a battery observation. */
@@ -1824,7 +1882,7 @@ c1_status c1_linux_ui_run(c1_record_sink sink)
 
             if (power_action == C1_POWER_ACTION_SHUTDOWN) {
                 bool accepted = false;
-                if (automatic_shutdown_safe(&service_worker, &user_session, &app_session)) {
+                if (prepare_automatic_shutdown(&service_worker, &user_session, &app_session, sink)) {
                     accepted = request_poweroff_locked(&state, &power_policy,
                                                        terminal_screen, sink);
                     if (accepted) shutdown_requested = true;

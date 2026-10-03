@@ -14,6 +14,12 @@ static char run_path[256], lease_path[256], mode_path[256], guard_path[256];
 #include "../src/core/power_policy.c"
 #include <termios.h>
 
+bool c1_terminal_command_running(c1_terminal_session *session)
+{
+    (void)session;
+    return false;
+}
+
 /* Hardware-free tests exercise the actual UI publication/render/health logic;
  * unused runtime sections are discarded by the host linker. */
 static unsigned int frame_writes, probe_calls, probe_timeout;
@@ -473,8 +479,8 @@ static void test_power_modes_runtime(void)
                    "saving and standard start a separate locked countdown and keep CLOCK_MONOTONIC running");
             user.child_pid = 123;
             expect(c1_power_policy_tick(&policy, off_at) == C1_POWER_ACTION_SHUTDOWN &&
-                       !automatic_shutdown_safe(&worker, &user, &app) && user.child_pid == 123,
-                   "live terminal work defers an otherwise due shutdown without being terminated");
+                       automatic_shutdown_safe(&worker, &user, &app) && user.child_pid == 123,
+                   "non-command terminal metadata does not defer an otherwise due shutdown");
             c1_power_policy_shutdown_failed(&policy, off_at + 100);
             expect(c1_power_policy_timeout(&policy, off_at + 100) == 60000 &&
                        c1_power_policy_tick(&policy, off_at + 60099) == C1_POWER_ACTION_NONE,
@@ -506,39 +512,41 @@ static void test_shutdown_guard(void)
     test_update_phase = C1_UPDATE_IDLE;
     expect(automatic_shutdown_safe(&worker, &user, &app), "idle desktop may request configured shutdown");
     worker.pid = 12;
-    expect(!automatic_shutdown_safe(&worker, &user, &app), "service operation defers automatic shutdown");
+    expect(automatic_shutdown_safe(&worker, &user, &app), "service operation does not defer automatic shutdown");
     worker.pid = -1; user.child_pid = 13;
-    expect(!automatic_shutdown_safe(&worker, &user, &app), "persistent user terminal protects unsaved work");
+    expect(automatic_shutdown_safe(&worker, &user, &app), "idle/unknown shell metadata does not defer automatic shutdown");
     user.child_pid = -1; app.child_pid = 14;
-    expect(!automatic_shutdown_safe(&worker, &user, &app), "owned application session defers automatic shutdown");
+    expect(automatic_shutdown_safe(&worker, &user, &app), "owned application session does not defer automatic shutdown");
     app.child_pid = -1; network_clock.pid = 15;
-    expect(!automatic_shutdown_safe(&worker, &user, &app), "time operation defers automatic shutdown");
+    expect(automatic_shutdown_safe(&worker, &user, &app), "time operation does not defer automatic shutdown");
     network_clock.pid = -1; test_update_phase = C1_UPDATE_DOWNLOADING;
-    expect(!automatic_shutdown_safe(&worker, &user, &app), "downloading update defers automatic shutdown");
+    expect(automatic_shutdown_safe(&worker, &user, &app), "downloading update does not defer automatic shutdown");
     test_update_phase = C1_UPDATE_VERIFIED;
-    expect(!automatic_shutdown_safe(&worker, &user, &app), "unprepared update defers automatic shutdown");
+    expect(automatic_shutdown_safe(&worker, &user, &app), "unprepared update does not defer automatic shutdown");
     test_update_phase = C1_UPDATE_PENDING_BOOT;
-    expect(!automatic_shutdown_safe(&worker, &user, &app), "unconfirmed boot defers automatic shutdown");
+    expect(automatic_shutdown_safe(&worker, &user, &app), "unconfirmed boot does not defer automatic shutdown");
     test_update_phase = C1_UPDATE_PREPARED;
-    expect(automatic_shutdown_safe(&worker, &user, &app), "prepared update is stable without active work");
+    expect(automatic_shutdown_safe(&worker, &user, &app), "prepared update permits automatic shutdown");
     update_load_error = -1;
-    expect(!automatic_shutdown_safe(&worker, &user, &app), "unknown update state never permits automatic shutdown");
+    expect(automatic_shutdown_safe(&worker, &user, &app), "unknown update state does not defer automatic shutdown");
     update_load_error = 0;
     int run = c1_app_run_acquire();
-    expect(run >= 0 && !automatic_shutdown_safe(&worker, &user, &app), "external app lease defers automatic shutdown");
+    expect(run >= 0 && automatic_shutdown_safe(&worker, &user, &app), "external app run does not defer automatic shutdown");
     c1_app_lease_release(run);
     int lease = c1_app_lease_acquire();
-    expect(lease >= 0 && !automatic_shutdown_safe(&worker, &user, &app) &&
-               !automatic_suspend_safe(&worker), "hardware lease alone blocks both automatic power actions");
+    expect(lease >= 0 && automatic_shutdown_safe(&worker, &user, &app) &&
+               !automatic_suspend_safe(&worker), "hardware lease only blocks automatic suspend");
     c1_app_lease_release(lease);
     test_update_phase = C1_UPDATE_IDLE;
     expect(automatic_suspend_safe(&worker), "idle desktop allows safe suspend preparation");
     worker.pid = 123;
-    expect(!automatic_suspend_safe(&worker), "service work blocks automatic suspend");
-    worker.pid = -1; desktop_job.pid = 124;
-    expect(!automatic_suspend_safe(&worker) && !automatic_shutdown_safe(&worker, &user, &app),
-           "desktop background job blocks both automatic power actions");
-    desktop_job.pid = -1; network_clock.pid = 125;
+    desktop_job.pid = 124;
+    expect(automatic_shutdown_safe(&worker, &user, &app),
+           "background and service work do not defer automatic shutdown");
+    expect(!automatic_suspend_safe(&worker), "service work still blocks automatic suspend");
+    worker.pid = -1; desktop_job.pid = -1; network_clock.pid = 125;
+    expect(automatic_shutdown_safe(&worker, &user, &app),
+           "network clock work does not defer automatic shutdown");
     expect(!automatic_suspend_safe(&worker), "network clock work blocks automatic suspend");
     network_clock.pid = -1;
     static const enum c1_update_phase busy_phases[] = {
@@ -546,15 +554,21 @@ static void test_shutdown_guard(void)
     };
     for (size_t i = 0; i < sizeof(busy_phases) / sizeof(*busy_phases); ++i) {
         test_update_phase = busy_phases[i];
+        expect(automatic_shutdown_safe(&worker, &user, &app),
+               "incomplete update does not defer automatic shutdown");
         expect(!automatic_suspend_safe(&worker), "incomplete update blocks automatic suspend");
     }
     test_update_phase = C1_UPDATE_PREPARED;
     expect(automatic_suspend_safe(&worker), "stable prepared update allows safe suspend preparation");
     update_load_error = -1;
+    expect(automatic_shutdown_safe(&worker, &user, &app),
+           "unknown update state does not defer automatic shutdown");
     expect(!automatic_suspend_safe(&worker), "unknown update state blocks automatic suspend");
     update_load_error = 0;
     run = c1_app_run_acquire();
-    expect(run >= 0 && !automatic_suspend_safe(&worker), "external app run blocks automatic suspend");
+    expect(run >= 0 && automatic_shutdown_safe(&worker, &user, &app),
+           "external app run does not defer automatic shutdown");
+    expect(!automatic_suspend_safe(&worker), "external app run blocks automatic suspend");
     c1_app_lease_release(run);
     test_update_phase = C1_UPDATE_PENDING_BOOT;
 }
