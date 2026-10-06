@@ -25,6 +25,10 @@
 
 `c1publish` 在 GitHub Release 提供客户端下载，适用的分发说明与许可见 [分发说明](tools/publisher/DISTRIBUTION-NOTE.txt) 和 [Go 第三方许可](tools/publisher/THIRD_PARTY_NOTICES.txt)。
 
+## QEMU 模拟器
+
+[`simulator/`](simulator/README.md) 保留其 GPL-3.0-or-later 自有代码声明，Linux 设备模块为 GPL-2.0-only。构建时下载的 Linux、BusyBox、curl、FFmpeg、OpenSSL 和官方发行包各自保留许可；来源、固定版本及源码提供范围见 [模拟器第三方说明](simulator/THIRD_PARTY_NOTICES.md)。镜像、缓存和个人数据不随源码分发。
+
 ## 本次未分发
 
 系统备份、原厂固件、个人媒体、运行日志、凭据和私钥均不属于此源码仓库或开发者工具包。开发者自行增加素材或依赖时，需要另外核对来源和适用许可。

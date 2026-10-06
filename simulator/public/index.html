@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>C1-Slim 模拟器</title><link rel="stylesheet" href="/style.css"></head>
+<body>
+<main>
+  <header><div><p class="eyebrow">C1-SLIM / MP-D261</p><h1>设备模拟器<span class="tag">MIPS</span></h1><p class="intro">运行原始设备程序，在电脑上体验和调试。</p></div><div class="status"><i id="status-dot"></i><span id="status">正在启动 Linux…</span></div></header>
+  <section class="workspace">
+    <div class="device" tabindex="0" aria-label="设备键盘操作区">
+      <div class="device-top"><span>C1 SLIM</span><div class="leds"><i></i><i></i><i></i><i></i></div></div>
+      <div class="screen-bezel"><canvas id="screen" width="296" height="152" aria-label="296×152 电子纸屏幕"></canvas><div id="screen-wait">正在启动 MIPS 设备</div></div>
+      <div class="screen-label"><span>电子纸 · 296 × 152</span><span id="frame-count">等待画面</span></div>
+      <div class="device-controls"><div class="utility"><button data-key="102">Home</button><button data-key="158">返回</button><button data-key="143" data-shift="true" title="终端扩展符号选择器：Shift + 电源短按">更多符号</button></div><div class="dpad"><button class="up" data-key="103" aria-label="上">↑</button><button class="left" data-key="105" aria-label="左">←</button><button class="ok" data-key="352">OK</button><button class="right" data-key="106" aria-label="右">→</button><button class="down" data-key="108" aria-label="下">↓</button></div><div class="utility"><button data-key="115">音量 ＋</button><button data-key="114">音量 −</button><button data-key="116">电源</button></div></div>
+      <div class="keyboard" id="keyboard"></div>
+      <div class="device-bottom">QEMU · ORIGINAL DEVICE BINARIES</div>
+    </div>
+    <aside>
+      <div class="panel"><div class="panel-heading"><h2>应用</h2><span id="app-status">等待设备</span></div><div id="apps" class="apps"></div></div>
+      <div class="panel"><h2>操作</h2><p>直接使用电脑键盘，或点击设备按键。</p><div class="key-hints"><span><kbd>方向键</kbd> 导航</span><span><kbd>Enter</kbd> 确定</span><span><kbd>Esc</kbd> 返回</span><span><kbd>Home</kbd> 首页</span></div><p class="subtle">字母默认小写，键帽上的大写只是标识。单按 Shift 切换小写 → 大写 → 数字/符号。终端数字可直接按电脑数字键或点击数字行；按住 Shift + 字母输入角标字符。OK + 字母发送 Ctrl 组合键。电源短按锁屏，长按关机。</p></div>
+      <div class="panel"><div class="panel-heading"><h2>电池</h2><span id="battery-label">80%</span></div><input id="battery" type="range" min="0" max="100" value="80" aria-label="电池电量"><label class="charging"><input id="plugged" type="checkbox" checked> 外部电源已连接</label></div>
+      <div class="footnote">应用和设置保存在本地虚拟磁盘。声音通过电脑默认音频设备播放。</div>
+    </aside>
+  </section>
+  <details class="logs"><summary>运行日志<span id="log-count"></span></summary><pre id="logs">等待程序输出…</pre></details>
+  <div class="toast" id="toast" role="status"></div>
+</main>
+<script src="/app.js"></script>
+</body></html>

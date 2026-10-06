@@ -31,6 +31,7 @@ GitHub 当前已有的 [2.0.0 Release](https://github.com/fwz233-RE/C1auncher/re
 - [`term-ime/`](term-ime/README.md)：Linux 终端中文输入法，内置 Rime 与依赖源码；[`integration/`](term-ime/integration/README.md) 提供独立服务和纯 C 客户端。MIPS 构建、预编译词典及验证边界见该目录文档；输入法尚未在应用商店公开发布。
 - [`ChiChuGames/`](ChiChuGames/README.md)：游戏应用。
 - [`examples/hello/`](examples/hello/README.md)：不依赖其他项目的终端应用示例。
+- [`simulator/`](simulator/README.md)：QEMU MIPS 应用兼容环境，在电脑上显示原版电子纸画面、输入按键、播放音频，并调试本地编译的核心和应用。
 
 公开源码统一在本仓库维护。服务器、发布器、InkWars 和 Windows 安装器源码仅在本地保留，不随本轮源码提交上传；发布器的使用方法见 [打包与发布说明](docs/publishing.md)。旧版本提交和标签保留；核心源码位于 `C1ancher/`，旧文档中的仓库根构建命令需先进入该目录。
 

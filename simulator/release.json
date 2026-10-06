@@ -1,0 +1,104 @@
+{
+  "schema": 1,
+  "checked_at": "2026-10-06T07:59:59.030726+00:00",
+  "core": {
+    "url": "https://www.fwz233.com/c1/core/v1/stable",
+    "version": "2.9.12",
+    "sequence": 30,
+    "revision": "afe527cf0e39397b5a551f84a4da5cbf02d40a10",
+    "manifest_sha256": "e832791d993f82957b0fb1a9bdd3ef958d0c3ae005da1e84af040bbb8991e24d",
+    "signature_sha256": "c7b383a4d3bbc1bee44954d8898b8bfa5b71c63708cb0fb69834b3f369983623",
+    "files": [
+      {
+        "id": "c1ancher",
+        "path": "artifacts/C1ancher",
+        "sha256": "f883af787dc35378bbf8796401b80ad3d72e1bc373f4a37690968c7fb607d54b",
+        "size": 2032036,
+        "mode": "700"
+      },
+      {
+        "id": "c1pkg",
+        "path": "artifacts/c1pkg",
+        "sha256": "49097f6481a72cc8617f0100654e2dd032a3f32c6e37284c0b2f17181af42b5f",
+        "size": 1940892,
+        "mode": "700"
+      },
+      {
+        "id": "launcher",
+        "path": "artifacts/C1ancher-launcher",
+        "sha256": "c9b3a9e3a95113a9e64eb5e9bfc7ffbe8ebf476210059558c5b83aa4693edcda",
+        "size": 672920,
+        "mode": "700"
+      },
+      {
+        "id": "updater",
+        "path": "artifacts/c1updater",
+        "sha256": "a39ec6c76422b28c2503460133d232d0513c27f3a9cb07c7f189da101bd02f2f",
+        "size": 763412,
+        "mode": "700"
+      }
+    ]
+  },
+  "repository": {
+    "url": "https://www.fwz233.com/c1/v2",
+    "sequence": 179,
+    "index_sha256": "ecf1282fe010864b4b741e0b1d2cf5366065332657ad92dbfe34f4c8842ec9fa",
+    "signature_sha256": "b030746554ac738efb551d011a135da9a62220ba52bb080f2ea31a43a5aa48c0",
+    "apps": [
+      {
+        "id": "hello",
+        "version": "1.5.1",
+        "name": "Hello",
+        "path": "objects/47ea33a5870807f1731d21c6c44a454623fc1f87b3a8832496e5d4f589e64fa7.tar.gz",
+        "sha256": "47ea33a5870807f1731d21c6c44a454623fc1f87b3a8832496e5d4f589e64fa7",
+        "size": 723586,
+        "entry": "hello"
+      },
+      {
+        "id": "book-reader",
+        "version": "0.1.23",
+        "name": "Book Reader",
+        "path": "objects/72506c453809656a05832762190240a1ac2b35af01acc31a6c5e3d2ef24b3ef6.tar.gz",
+        "sha256": "72506c453809656a05832762190240a1ac2b35af01acc31a6c5e3d2ef24b3ef6",
+        "size": 17759511,
+        "entry": "book-reader"
+      },
+      {
+        "id": "pic",
+        "version": "0.1.4",
+        "name": "Picture Viewer",
+        "path": "objects/25f742b83accf9cc307e0035c9e4e4204c2940f7b19cfc3dda173975ed248b0f.tar.gz",
+        "sha256": "25f742b83accf9cc307e0035c9e4e4204c2940f7b19cfc3dda173975ed248b0f",
+        "size": 6664029,
+        "entry": "pic"
+      },
+      {
+        "id": "chichugames",
+        "version": "0.1.3",
+        "name": "ChiChuGames",
+        "path": "objects/d7e01ee5ccfb341c5748fb4f5d90d4d4cafaa77f3fefb3daa413283248099e07.tar.gz",
+        "sha256": "d7e01ee5ccfb341c5748fb4f5d90d4d4cafaa77f3fefb3daa413283248099e07",
+        "size": 588689,
+        "entry": "bin/chichugames"
+      },
+      {
+        "id": "music-player",
+        "version": "0.3.6",
+        "name": "Music Player",
+        "path": "objects/68d57a150ac4cee8a7729169d7615e427f50e1f044ff19ce10a01bace9b07956.tar.gz",
+        "sha256": "68d57a150ac4cee8a7729169d7615e427f50e1f044ff19ce10a01bace9b07956",
+        "size": 21105325,
+        "entry": "music-player"
+      },
+      {
+        "id": "pinao",
+        "version": "1.1.1",
+        "name": "Pinao",
+        "path": "objects/4d86e11031ff7d5a76a56eb4a03b9b536bd0dc20fd75ad64db59b63459b9eeb3.tar.gz",
+        "sha256": "4d86e11031ff7d5a76a56eb4a03b9b536bd0dc20fd75ad64db59b63459b9eeb3",
+        "size": 1202884,
+        "entry": "pinao"
+      }
+    ]
+  }
+}
