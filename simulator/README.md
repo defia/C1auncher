@@ -6,7 +6,16 @@
 
 ## 首次构建和启动
 
-宿主需要 Python 3.11+、QEMU、curl、支持 Ed25519 的 OpenSSL，以及已启动的 Docker 或 Podman。macOS 可用 `brew install qemu python podman`；Linux 安装发行版的 `qemu-system-mips`、`qemu-utils` 等；Windows 安装 Python 和 QEMU 并加入 PATH，容器需要 Linux 环境。实际验证宿主为 Apple Silicon macOS；Windows/Linux 宿主尚未执行验证。
+宿主需要 Python 3.11+、QEMU、curl、支持 Ed25519 的 OpenSSL，以及已启动的 Docker 或 Podman。Linux 安装发行版的 `qemu-system-mips`、`qemu-utils` 等；Windows 安装 Python、QEMU、curl 和 OpenSSL 并加入 PATH，容器需要 Linux 环境。实际验证宿主为 Apple Silicon macOS；Windows/Linux 宿主尚未执行验证。
+
+macOS 使用 Homebrew 安装，并在运行构建和更新脚本的终端选择 OpenSSL 3：
+
+```sh
+brew install qemu python podman openssl@3
+export PATH="$(brew --prefix openssl@3)/bin:$PATH"
+```
+
+macOS 系统自带的 LibreSSL 不支持此验签命令需要的 `-rawin` 参数。
 
 在仓库根目录执行：
 
