@@ -1,0 +1,96 @@
+#!/bin/sh
+export PATH=/usr/data/c1/bin:/bin:/sbin:/usr/bin:/usr/sbin
+export HOME=/root TERM=xterm-256color
+mount -t proc proc /proc
+mount -t sysfs sysfs /sys
+mount -t devtmpfs devtmpfs /dev
+mkdir -p /dev/pts /dev/shm /tmp /run /persist
+mount -t devpts devpts /dev/pts
+mount -t tmpfs tmpfs /dev/shm
+mount -t tmpfs tmpfs /tmp
+mount -t tmpfs tmpfs /run
+insmod /lib/modules/c1sim.ko || exec /bin/sh
+/sbin/c1sim-audio --init || echo 'C1SIM_AUDIO_ERROR: AC97 mixer initialization failed.'
+NEW_DISK=0
+for option in $(cat /proc/cmdline); do
+    case "$option" in c1sim_newdisk=*) NEW_DISK=${option#*=} ;; esac
+done
+
+# Persistent disk belongs exclusively to this simulator.
+if [ -b /dev/vda ]; then
+    if ! mount -t ext4 /dev/vda /persist 2>/dev/null; then
+        if [ "$NEW_DISK" = 1 ]; then
+            /bin/busybox mkfs.ext2 -F /dev/vda && mount -t ext4 /dev/vda /persist
+        else
+            echo 'C1SIM_ERROR: existing disk cannot be mounted; choose a new --disk file.'
+            exec /bin/sh
+        fi
+    fi
+    if mount | grep -q ' /persist '; then
+        if [ ! -d /persist/usr-data ]; then
+            mkdir -p /persist/usr-data /persist/storage
+            cp -a /usr/data/. /persist/usr-data/
+            cp -a /storage/. /persist/storage/
+        fi
+        mount --bind /persist/usr-data /usr/data
+        mount --bind /persist/storage /storage
+    fi
+fi
+
+ifconfig lo 127.0.0.1 up
+ifconfig eth0 10.0.2.15 netmask 255.255.255.0 up
+route add default gw 10.0.2.2
+echo 'nameserver 10.0.2.3' > /etc/resolv.conf
+PORT=7654
+HTTP_PORT=8765
+for option in $(cat /proc/cmdline); do
+    case "$option" in
+        c1sim_port=*) PORT=${option#*=} ;;
+        c1sim_http=*) HTTP_PORT=${option#*=} ;;
+    esac
+done
+echo "http://10.0.2.2:$HTTP_PORT/repo" > /usr/data/c1/pkg/repository.url
+touch /usr/data/c1/disable-auto-suspend
+mkdir -p /usr/data/c1/update
+echo "http://10.0.2.2:$HTTP_PORT/repo/core" > /usr/data/c1/update/repository.url
+# The data disk shadows initramfs /usr/data. Update only the four official
+# core files; preserve application data, trust state and user configuration.
+RELEASE=$(cat /etc/c1sim-release)
+if [ "$(cat /usr/data/c1/.c1sim-release 2>/dev/null)" != "$RELEASE" ]; then
+    for name in C1ancher c1pkg C1ancher-launcher c1updater; do
+        cp "/opt/c1sim-core/$name" "/usr/data/c1/bin/$name.new" || exec /bin/sh
+        chmod 755 "/usr/data/c1/bin/$name.new"
+        mv "/usr/data/c1/bin/$name.new" "/usr/data/c1/bin/$name" || exec /bin/sh
+    done
+    cp /opt/c1sim-core/core.ed25519.pub /usr/data/c1/update/core.ed25519.pub
+fi
+if [ "$(cat /usr/data/c1/.c1sim-release 2>/dev/null)" != "$RELEASE" ]; then
+    INSTALLED=1
+    for APP in hello book-reader pic chichugames music-player pinao; do
+        /usr/data/c1/bin/c1pkg install "$APP" || INSTALLED=0
+    done
+    if [ "$INSTALLED" = 1 ]; then
+        printf '%s\n' "$RELEASE" > /usr/data/c1/.c1sim-release.new
+        mv /usr/data/c1/.c1sim-release.new /usr/data/c1/.c1sim-release
+        sync
+    else
+        echo 'C1SIM_ERROR: application update incomplete; it will retry on the next boot.'
+    fi
+fi
+if [ -f /etc/c1sim-local-core ]; then
+    echo '=== Developer core: local MIPS build (not a signed release) ==='
+    for name in C1ancher C1ancher-launcher c1pkg c1updater; do
+        mount --bind "/opt/c1sim-dev-core/$name" "/usr/data/c1/bin/$name" || exec /bin/sh
+    done
+else
+    echo '=== Official signed MIPS release ==='
+fi
+/usr/data/c1/bin/C1ancher --version
+/usr/data/c1/bin/c1pkg --help
+echo '=== C1SIM_READY ==='
+/sbin/c1sim-bridge "$PORT" &
+# Serial console remains available for troubleshooting the actual MIPS guest.
+while true; do
+    setsid /bin/cttyhack /bin/sh
+    sleep 1
+done

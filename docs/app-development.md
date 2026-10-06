@@ -65,6 +65,8 @@
 
 先跑应用的本机测试，再交叉编译，核对 ELF 架构、静态链接和运行资源。然后在自己的设备上验证打开、交互、退出和保存数据；涉及音频、休眠、屏幕刷新的行为需要实机验证。
 
+可先在电脑上用 [`simulator/`](../simulator/README.md) 做应用运行检查。首次构建后，在该目录执行 `python3 start.py --binary /path/to/app --resources /path/to/assets`，即可运行原始静态 MIPS 图形应用并查看电子纸输出、操作键盘和播放音频；没有资源时省略 `--resources`。纯终端示例应在模拟器里的原版 TERMINAL 运行。模拟器提供的是设备用户空间兼容环境，硬件时序、电源和升级流程仍需实机验证。
+
 最小示例 README 给出了只上传临时文件的 ADB 测试方法，不需要重启或替换系统核心。没有设备时可以分享源码，但不要声称通过实机验收。
 
 ## 5. 上传到现有应用仓库
@@ -82,3 +84,5 @@ Windows PowerShell 可执行：
     .\C1ancher\scripts\build.ps1
 
 核心的四个设备产物位于 `C1ancher/build/`：主程序、启动器、`c1pkg` 和 `c1updater`。核心更新使用独立的签名、校验与恢复流程，构建及安装说明见 [核心 README](../C1ancher/README.md)。
+
+调试本地核心时，在已构建客体的 `simulator/` 目录执行 `python3 scripts/build_core.py`，再执行 `python3 start.py --core-dir ../C1ancher/build`。本地编译版本标记为 `local` 并默认使用独立开发数据盘；默认官方签名版本仍可按模拟器文档恢复。

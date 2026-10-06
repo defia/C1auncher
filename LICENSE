@@ -15,6 +15,10 @@ The imported term-ime/ component retains its upstream MIT license declaration
 and the individual licenses of its vendored dependencies and data. It is not
 relicensed under the repository's GPL default; see term-ime/THIRD_PARTY_NOTICES.md.
 
+The simulator/ component declares GPL-3.0-or-later for its first-party code;
+its Linux device module declares GPL-2.0-only. See simulator/LICENSE and
+simulator/THIRD_PARTY_NOTICES.md for its component-specific notices.
+
 The separately distributed c1publish executables have their own distribution
 notices. See the publisher kit's DISTRIBUTION-NOTE.txt and
 THIRD_PARTY_NOTICES.txt.
