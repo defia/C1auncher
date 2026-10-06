@@ -2,10 +2,10 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"syscall"
 	"time"
 
@@ -14,7 +14,10 @@ import (
 
 var version = "dev"
 
-const defaultBooksDir = "/storage/mtp/Book"
+const (
+	defaultBooksDir       = "/storage/mtp/Book"
+	defaultBookReaderHome = "/storage/c1/book-reader"
+)
 
 func main() {
 	if len(os.Args) == 2 && os.Args[1] == "--version" {
@@ -27,18 +30,10 @@ func main() {
 	}
 }
 
-func run() error {
-	booksDir := envOr("C1_BOOKS_DIR", defaultBooksDir)
-	if err := os.MkdirAll(booksDir, 0755); err != nil {
-		return fmt.Errorf("prepare Book directory: %w", err)
-	}
-	home := envOr("C1_BOOK_READER_HOME", "/usr/data/c1/book-reader")
-	// Device root/home may be read-only. Keep converted EPUB/TXT content next
-	// to reader state, never beside the original book or in the app payload.
-	if os.Getenv("C1BOOK_READER_CACHE_DIR") == "" {
-		if err := os.Setenv("C1BOOK_READER_CACHE_DIR", filepath.Join(home, "documents")); err != nil {
-			return err
-		}
+func run() (err error) {
+	booksDir, home, err := prepareReaderStorage()
+	if err != nil {
+		return err
 	}
 	uiFace, err := newReaderFace(false)
 	if err != nil {
@@ -83,7 +78,7 @@ func run() error {
 		if saveTimer != nil {
 			saveTimer.Stop()
 		}
-		save()
+		err = saveProgressOnExit(app, err)
 	}()
 	for {
 		select {
@@ -92,6 +87,11 @@ func run() error {
 		case <-saveChannel:
 			save()
 			saveChannel = nil
+			if app.message != "" {
+				if drawErr := platform.Draw(app.render(), false); drawErr != nil {
+					return drawErr
+				}
+			}
 		case event, ok := <-platform.Events():
 			if !ok {
 				return fmt.Errorf("input event stream closed unexpectedly")
@@ -119,6 +119,13 @@ func run() error {
 			}
 		}
 	}
+}
+
+func saveProgressOnExit(app *readerApp, prior error) error {
+	if err := app.saveProgress(); err != nil {
+		return errors.Join(prior, fmt.Errorf("save progress on exit: %w", err))
+	}
+	return prior
 }
 
 func envOr(name, fallback string) string {

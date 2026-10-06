@@ -8,6 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"c1device"
 )
 
 type visualMode uint8
@@ -74,6 +76,9 @@ func loadVisualMode(path string) visualMode {
 }
 
 func saveVisualMode(path string, mode visualMode) error {
+	if err := c1device.RequireStoragePath(path); err != nil {
+		return err
+	}
 	if mode >= visualModeCount {
 		return os.ErrInvalid
 	}

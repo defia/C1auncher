@@ -16,10 +16,9 @@ import (
 var version = "dev"
 
 const (
-	defaultMusicDir            = "/storage/mtp/Music"
-	defaultFontPath            = "assets/MiSans-Normal.ttf"
-	defaultDisplaySettingsPath = "/usr/data/c1/music-player/display.json"
-	defaultVolumeSettingsPath  = "/usr/data/c1/music-player/volume.json"
+	defaultMusicDir        = "/storage/mtp/Music"
+	defaultMusicPlayerHome = "/storage/c1/music-player"
+	defaultFontPath        = "assets/MiSans-Normal.ttf"
 )
 
 func main() {
@@ -43,9 +42,9 @@ func main() {
 func runApp() error {
 	debug.SetMemoryLimit(16 << 20)
 	debug.SetGCPercent(50)
-	musicDir := environmentOrDefault("C1_MUSIC_DIR", defaultMusicDir)
-	if err := os.MkdirAll(musicDir, 0755); err != nil {
-		return fmt.Errorf("prepare Music directory: %w", err)
+	musicDir, settingsPath, volumePath, err := prepareMusicStorage()
+	if err != nil {
+		return err
 	}
 	fontPath := environmentOrDefault("C1_FONT_PATH", defaultFontPath)
 	tracks, err := scanLibrary(musicDir)
@@ -84,8 +83,6 @@ func runApp() error {
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
 	defer cancel()
-	settingsPath := environmentOrDefault("C1_MUSIC_DISPLAY_SETTINGS", defaultDisplaySettingsPath)
-	volumePath := environmentOrDefault("C1_MUSIC_VOLUME_SETTINGS", defaultVolumeSettingsPath)
 	volume, err := restoreVolume(volumePath, applyVolume)
 	if err != nil {
 		return err

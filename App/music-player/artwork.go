@@ -11,6 +11,8 @@ import (
 	"os"
 	"runtime/debug"
 
+	"c1device"
+
 	xdraw "golang.org/x/image/draw"
 )
 
@@ -28,6 +30,9 @@ type artworkLocation struct {
 }
 
 func loadTrackCover(path string) image.Image {
+	if c1device.RequireStoragePath(artworkCachePath(path)) != nil {
+		return defaultCover()
+	}
 	file, err := os.Open(path)
 	if err != nil {
 		return defaultCover()

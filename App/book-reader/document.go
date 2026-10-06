@@ -13,6 +13,8 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"c1device"
+
 	"golang.org/x/text/encoding/simplifiedchinese"
 	"golang.org/x/text/transform"
 )
@@ -49,6 +51,9 @@ var volumeTitlePattern = regexp.MustCompile(`^(?:卷|部|篇)[一二三四五六
 var decoratedChapterPattern = regexp.MustCompile(`^第?([一二三四五六七八九十百千万零〇两0-9]{1,16})([章节回])(.*)$`)
 
 func OpenDocument(path string) (*Document, error) {
+	if err := c1device.RequireStoragePath(documentCacheDir()); err != nil {
+		return nil, err
+	}
 	file, err := os.Open(path)
 	if err != nil {
 		return nil, err

@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"c1device"
 )
 
 const layoutVersion = 3
@@ -40,6 +42,9 @@ func (store ProgressStore) progressPath(bookPath string) string {
 }
 
 func (store ProgressStore) Save(progress Progress) error {
+	if err := c1device.RequireStoragePath(store.progressPath(progress.Path)); err != nil {
+		return err
+	}
 	if err := os.MkdirAll(store.Dir, 0o755); err != nil {
 		return err
 	}
@@ -71,6 +76,9 @@ func (store ProgressStore) Save(progress Progress) error {
 }
 
 func (store ProgressStore) Load(bookPath string) (Progress, bool, error) {
+	if err := c1device.RequireStoragePath(store.progressPath(bookPath)); err != nil {
+		return Progress{}, false, err
+	}
 	data, err := os.ReadFile(store.progressPath(bookPath))
 	if os.IsNotExist(err) {
 		return Progress{}, false, nil

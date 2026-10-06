@@ -1,6 +1,16 @@
-# Book Reader
+# Book Reader 0.1.23
 
-面向 C1 小屏设备的离线阅读器。默认读取设备 `/storage/mtp/Book`（含子目录）；新增书籍后重新启动阅读器。
+## 持久化路径与存储检查
+
+默认数据目录为 `/storage/c1/book-reader`：阅读进度、书签、EPUB/TXT 派生文档缓存和 `last-error.log` 均写入此目录或其 `documents/` 子目录。默认书籍目录仍为 `/storage/mtp/Book`。启动前会确认 `/storage` 已挂载到独立存储文件系统；未挂载时直接报错，不会在根分区创建目录或数据。
+
+本版不读取、复制或删除旧的 `/usr/data/c1/book-reader` 数据，也不提供旧路径回退。升级后从新目录开始保存，旧目录中的进度和书签不会自动恢复。测试或自定义部署可显式设置 `C1_BOOK_READER_HOME`（进度、书签、日志及默认缓存根）、`C1BOOK_READER_CACHE_DIR`（仅文档缓存）和 `C1_BOOKS_DIR`（仅原书目录）；设置为 `/storage` 下路径时仍执行挂载检查，设置为其他路径时由调用者负责其可写性。读取配置不依赖修改进程环境，也不会回退主机缓存目录。
+
+## 0.1.23：应用数据改用持久存储
+
+- 阅读进度、书签、文档缓存和错误日志默认从易被核心更新清理的 `/usr/data/c1/book-reader` 改为 `/storage/c1/book-reader`。
+- 未挂载 `/storage` 时启动失败并保守退出；错误诊断也不会为了写日志在根分区创建旧目录。
+- 不执行旧数据迁移，现有旧目录保持不读、不复制、不删除。
 
 ## 0.1.22：音量键、章节页码与导航布局
 
@@ -17,7 +27,7 @@
 - 字库包含 30,064 个字形，直接内嵌程序，不再依赖外部 `MiSans-Normal.ttf`，也不再读取 `C1_FONT_PATH`。未覆盖的罕见字符显示替代字形，不保证全部 Unicode 字符都有字。
 - TXT 支持 UTF-8（含 BOM）、GB18030，以及带 BOM 的 UTF-16LE/BE。`〖…〗`、`【…】` 等包裹式卷章标题可识别；异常 GB 字节显示替代字形，同时保留原始字节偏移，避免书签偏移。
 - EPUB 支持离线读取 OPF spine 顺序的 XHTML/HTML 正文，使用 NCX / EPUB 3 导航标题及锚点组织目录。忽略非正文脚本、样式；不下载外部资源、不执行脚本。当前是纯文字阅读，不还原 CSS 排版、插图、表格布局或交互脚注；加密/DRM EPUB 明确报错。
-- EPUB 和 UTF-16 转换缓存保存在 `/usr/data/c1/book-reader/documents`（随 `C1_BOOK_READER_HOME` 改变，或用 `C1BOOK_READER_CACHE_DIR` 单独指定）。书籍目录不需要写权限；进度、书签仍绑定原始书籍路径及指纹。缓存可重建，更新软件不需要重新导入书籍。
+- EPUB 和 UTF-16 转换缓存保存在 `/storage/c1/book-reader/documents`（随 `C1_BOOK_READER_HOME` 改变，或用 `C1BOOK_READER_CACHE_DIR` 单独指定）。进度、书签和错误日志默认保存在 `/storage/c1/book-reader`；书籍目录不需要写权限。旧的 `/usr/data/c1/book-reader` 不读取、不复制、不删除，也没有回退路径。缓存可重建，更新软件不需要重新导入书籍。
 - ZIP 限制为最多 10,000 个条目、单条目 32 MiB、总展开量 256 MiB，元数据 4 MiB；限制异常压缩比及 XML 嵌套深度。路径穿越、重复/加密条目、缺失 spine 资源等拒绝解析。
 - 原书籍保留不变；本地测试用书不随程序分发。
 - 字库由 `tools/generate_bitmap.py` 从 `C1ancher/src/pkg/font_generated.h` 原样转换；许可证在 `assets/font-LICENSE.txt`，为 SIL OFL 1.1。
@@ -40,7 +50,7 @@
 
 ## 与现有功能的兼容
 
-底层 `Document.Chapters` 继续保留原来的顺序及每段的字节范围。目录树只提供展示和导航，不使用可见行号存储阅读位置。
+底层 `Document.Chapters` 继续保留原来的顺序及每段的字节范围。目录树只提供展示和导航，不使用可见行号存储阅读位置。本节说明文件格式兼容，不代表本版会读取或迁移旧 `/usr/data` 目录。
 
 - 阅读进度、书签文件格式及 `layoutVersion` 不变。
 - 章节缓存升级到版本 3，重扫包裹式卷章标题，并将派生数据放入私有缓存目录；旧缓存会自动重建。此操作不修改书籍内容，也不删除阅读进度和书签。
@@ -62,6 +72,6 @@
 
 ## 构建与预览
 
-运行 `build.ps1 -Version 0.1.22`，默认输出至仓库 `build/book-reader-0.1.22/payload/book-reader`。构建会运行主机测试和 vet，生成静态 MIPS 小端硬浮点 ELF 并检查 ABI。字库已内嵌，不需要本机 TTF 文件。主机预览在设置 `C1_UI_PREVIEW_DIR` 后由测试生成，`native-body.png` 使用合成示例文字而非书籍摘录。
+运行 `build.ps1 -Version 0.1.23`，默认输出至仓库 `build/book-reader-0.1.23/payload/book-reader`。构建会运行主机测试和 vet，生成静态 MIPS 小端硬浮点 ELF 并检查 ABI。字库已内嵌，不需要本机 TTF 文件。主机预览在设置 `C1_UI_PREVIEW_DIR` 后由测试生成，`native-body.png` 使用合成示例文字而非书籍摘录。
 
 回归测试覆盖：无卷书籍、卷首正文、空卷、重复卷标题及补充正文、中文/大写/阿拉伯卷号、卷号缺失及倒序回退、分隔线、UTF-8/BOM/CRLF/GB18030、旧缓存和存档兼容、目录展开收起、确定键打开章节、跨卷翻页、书签来源、顶排数字及小数百分比输入、删除/取消/非法输入处理和真实书籍跳转。

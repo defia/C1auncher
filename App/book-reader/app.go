@@ -224,7 +224,9 @@ func (app *readerApp) openSelectedBook() {
 	app.pageIndex = 0
 	app.resumeOffset = 0
 	app.bookmarks = nil
-	if saved, ok, err := app.store.Load(document.Path); err == nil && ok {
+	if saved, ok, err := app.store.Load(document.Path); err != nil {
+		app.message = err.Error()
+	} else if ok {
 		if chapter, valid := restoredChapter(document, saved.Chapter, saved.Offset); valid {
 			app.revealChapter(chapter)
 			app.chapterIndex = chapter

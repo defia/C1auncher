@@ -8,6 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+
+	"c1device"
 )
 
 const bookmarkFormatVersion = 1
@@ -33,6 +35,9 @@ func (store BookmarkStore) bookmarkPath(bookPath string) string {
 
 func (store BookmarkStore) Load(bookPath string) ([]Bookmark, error) {
 	path := store.bookmarkPath(bookPath)
+	if err := c1device.RequireStoragePath(path); err != nil {
+		return nil, err
+	}
 	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
 		return nil, nil
@@ -58,6 +63,9 @@ func (store BookmarkStore) Load(bookPath string) ([]Bookmark, error) {
 
 func (store BookmarkStore) Save(bookPath string, bookmarks []Bookmark) error {
 	path := store.bookmarkPath(bookPath)
+	if err := c1device.RequireStoragePath(path); err != nil {
+		return err
+	}
 	if len(bookmarks) == 0 {
 		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
 			return err

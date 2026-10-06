@@ -5,6 +5,8 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+
+	"c1device"
 )
 
 const defaultVolume = 50
@@ -30,6 +32,9 @@ func loadVolumeSetting(path string) (int, bool) {
 }
 
 func saveVolumeSetting(path string, value int) error {
+	if err := c1device.RequireStoragePath(path); err != nil {
+		return err
+	}
 	if value < 0 || value > 100 {
 		return os.ErrInvalid
 	}

@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)][string]$Version,
-    [string]$FontPath = 'D:\AI\MiSans-Normal.ttf',
+    [Parameter(Mandatory)][string]$FontPath,
     [string]$OutputPath
 )
 
@@ -35,6 +35,8 @@ try {
     $env:CGO_ENABLED = '0'
     go test ./...
     if ($LASTEXITCODE -ne 0) { throw 'Host tests failed.' }
+    go vet ./...
+    if ($LASTEXITCODE -ne 0) { throw 'Host vet failed.' }
 
     $env:GOOS = 'linux'
     $env:GOARCH = 'mipsle'

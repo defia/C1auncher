@@ -8,6 +8,8 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+
+	"c1device"
 )
 
 // v3 recognizes decorated TXT headings and stores all derived data privately.
@@ -22,19 +24,6 @@ type chapterIndexCache struct {
 	Chapters    []Chapter       `json:"chapters"`
 	Normalized  bool            `json:"normalized,omitempty"`
 	ContentSize int64           `json:"contentSize,omitempty"`
-}
-
-// An explicit directory also allows read-only integration tests without touching
-// books or the normal device cache. Only generated hash names are written here.
-func documentCacheDir() string {
-	if root := os.Getenv("C1BOOK_READER_CACHE_DIR"); root != "" {
-		return root
-	}
-	root, err := os.UserCacheDir()
-	if err != nil {
-		root = os.TempDir()
-	}
-	return filepath.Join(root, "c1book-reader", "documents")
 }
 
 func documentCacheKey(bookPath string) string {
@@ -106,6 +95,9 @@ func saveChapterIndexCache(bookPath string, cache chapterIndexCache) error {
 }
 
 func writePrivateCache(destination string, write func(io.Writer) error) error {
+	if err := c1device.RequireStoragePath(destination); err != nil {
+		return err
+	}
 	if err := os.MkdirAll(filepath.Dir(destination), 0700); err != nil {
 		return err
 	}

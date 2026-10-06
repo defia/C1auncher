@@ -2,6 +2,8 @@
 
 The embedded GNU Unifont 16.0.04 subset is copied pixel-for-pixel from the C1ancher package manager. Its SIL OFL 1.1 license and copyright notices are in font-LICENSE.txt (source: assets/font-LICENSE.txt). No user books are distributed.
 
+The archive includes the application and c1device sources, font inputs and generation/build scripts, and complete original source ZIPs of golang.org/x/image v0.45.0, golang.org/x/text v0.41.0 and golang.org/x/sys v0.47.0 with their original license notices. See BUILDING.md for an offline rebuild using Go 1.26.4 (official toolchain source: https://go.dev/dl/go1.26.4.src.tar.gz). The Go toolchain itself is not bundled. First-party code is GPL-3.0-only, with its complete license in LICENSE; fonts and dependencies retain their separate terms.
+
 Go runtime and golang.org/x/image, golang.org/x/text, golang.org/x/sys:
 
 Copyright 2009 The Go Authors.

@@ -8,6 +8,8 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+
+	"c1device"
 )
 
 const (
@@ -65,6 +67,9 @@ func validArtworkCacheHeader(header []byte, source artworkFingerprint) bool {
 }
 
 func saveArtworkCache(trackPath string, source artworkFingerprint, cover *image.Gray) error {
+	if err := c1device.RequireStoragePath(artworkCachePath(trackPath)); err != nil {
+		return err
+	}
 	if cover == nil || cover.Bounds() != image.Rect(0, 0, defaultCoverSize, defaultCoverSize) ||
 		cover.Stride != defaultCoverSize || len(cover.Pix) != defaultCoverSize*defaultCoverSize {
 		return os.ErrInvalid

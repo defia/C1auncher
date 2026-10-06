@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"runtime/debug"
 	"time"
+
+	"c1device"
 )
 
 // Keep fatal diagnostics outside the book directory. This also records panic
@@ -23,7 +25,10 @@ func runWithDiagnostics() (err error) {
 }
 
 func writeFailureLog(err error) {
-	home := envOr("C1_BOOK_READER_HOME", "/usr/data/c1/book-reader")
+	home := readerHome()
+	if c1device.RequireStoragePath(filepath.Join(home, "last-error.log")) != nil {
+		return
+	}
 	if os.MkdirAll(home, 0755) != nil {
 		return
 	}

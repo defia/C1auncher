@@ -1,3 +1,25 @@
+# Book Reader 0.1.23 发布记录
+
+2026-09-26 已发布正式应用仓库，并从公网重新下载完成回验。
+
+- ID：`book-reader`；显示名：`Book Reader`；作者：`fwz233`
+- 版本：`0.1.23`；入口：`book-reader`；模式：`direct`
+- 发布后的目录序列：178；与 Music Player 更新一同回验时为 179
+- 服务端包大小：17,759,511 字节
+- 服务端包 SHA256：`72506c453809656a05832762190240a1ac2b35af01acc31a6c5e3d2ef24b3ef6`
+- 本地/服务端 ELF SHA256：`59c88fefc938bfcaa5b80a8200e06e350279163b6bc8d7668a1fc98493c7a253`
+- 对应源码包 SHA256：`e10f286fa6fc749978c1cfa8bfc119eec03386d927b0986cfd4e8d9e8ecf5ab6`
+
+默认进度、书签、错误日志及派生文档缓存改为 `/storage/c1/book-reader`；书籍仍在 `/storage/mtp/Book`。按维护者要求，不读取、迁移或删除旧 `/usr/data/c1/book-reader` 数据，不在大分区不可用时回退至小分区。新目录没有状态时按首次使用处理，旧阅读进度和书签不会自动恢复。
+
+最终发行目录：`../../build/book-reader-0.1.23/publish-20260926-license-reviewed/`。只从最终源码包解出的源码及包内锁定依赖，在全新缓存、离线环境通过主机 test/vet 和 Linux/MIPS hardfloat vet/build，重建 ELF 与发布程序逐字节相同。阅读器 143 项测试通过、5 项可选用户书籍样本测试跳过，共享 c1device 22 项通过。目标模拟器执行过版本与存储相关定向测试；未执行本版完整 MIPS 运行套件或真机验收。
+
+通过固定 SSH 主机指纹的加密隧道及已有 fwz233 作者令牌发布，未把令牌交给公网明文 HTTP。随后从公开固定 IP 验证目录 Ed25519 签名、包哈希/长度、direct 清单、全部 16 个 payload 文件及权限；其他应用均保留。包内包含完整必要许可与可离线重建的对应源码，因此包体比旧版增大。首次本地发布预检因 Windows 默认字符编码失败，在启动 SSH 和上传前退出；修复 UTF-8 解析后仅执行一次实际发布，没有覆盖既有版本。
+
+回验证据：`../../build/release-2.9.11/apps-public-verified.json`，公开包：`../../build/release-2.9.11/book-reader-public.tar.gz`。此应用已独立发布，不表示 C1ancher 2.9.11 核心已发布。请在 APP 列表刷新并更新至 0.1.23；未自动安装到设备。后续修改须升新版本，不改变本次发行包。
+
+---
+
 # Book Reader 0.1.22 发布记录
 
 2026-09-11 已使用 Windows Publisher 1.1.0 发布正式仓库，并重新下载服务器签名包完成回验。
